@@ -1,242 +1,159 @@
-
 import streamlit as st
 import pandas as pd
+import numpy as np
 import re
+from datetime import datetime
 
-from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.metrics.pairwise import cosine_similarity
-
-# -----------------------------
+# ----------------------------
 # PAGE CONFIG
-# -----------------------------
-st.set_page_config(
-    page_title="Engineer Visit Knowledge Dashboard (RAG)",
-    layout="wide"
-)
+# ----------------------------
+st.set_page_config(page_title="Excel Intelligence Engine", layout="wide")
+st.title("🧠 Excel Intelligence Engine")
+st.caption("Schema-Agnostic | Insight-First | Enterprise Safe")
 
-st.title("🛠️ Engineer Visit Knowledge Dashboard (RAG)")
-st.caption("Phase 3 – Analytics + City + Asset Intelligence (Stable TF-IDF)")
-
-# -----------------------------
-# CONSTANTS
-# -----------------------------
-USELESS_PHRASES = [
-    "all system working fine",
-    "all systems working fine",
-    "checked ok",
-    "no issue found",
-    "site ok",
-    "working fine"
-]
-
-OFFLINE_KEYWORDS = [
-    "offline", "down", "not working", "no connectivity",
-    "network down", "router down", "power issue"
-]
-
-ASSET_MAP = {
-    "router": ["router", "network", "lan", "wan"],
-    "camera": ["camera", "cam"],
-    "dvr": ["dvr", "nvr", "recorder"]
-}
-
-# -----------------------------
-# HELPER FUNCTIONS
-# -----------------------------
-def clean_text(text):
-    if not isinstance(text, str):
-        return ""
-    text = text.lower()
-    for p in USELESS_PHRASES:
-        text = text.replace(p, "")
-    text = re.sub(r"\s+", " ", text).strip()
-    return text
-
-
-def detect_fix_type(text):
-    t = text.lower()
-    if any(w in t for w in ["replace", "replaced", "changed", "new", "faulty"]):
-        return "Permanent"
-    if any(w in t for w in ["restart", "reset", "temporary", "reboot"]):
-        return "Temporary"
-    return "Unclear"
-
-
-def detect_intent(query):
-    q = query.lower()
-    analytics_words = [
-        "how many", "total", "count", "number",
-        "offline", "visit", "visits"
-    ]
-    for w in analytics_words:
-        if w in q:
-            return "ANALYTICS"
-    return "EXPERIENCE"
-
-
-def extract_location(query, locations):
-    q = query.lower()
-    for loc in locations:
-        if loc.lower() in q:
-            return loc
-    return None
-
-
-def extract_asset(query):
-    q = query.lower()
-    for asset, words in ASSET_MAP.items():
-        for w in words:
-            if w in q:
-                return asset
-    return None
-
-
-# -----------------------------
-# SIDEBAR – FILE UPLOAD
-# -----------------------------
-st.sidebar.header("⚙️ Upload & Filters")
-
-uploaded_file = st.sidebar.file_uploader(
-    "Upload Engineer Visit Excel",
-    type=["xlsx"]
-)
+# ----------------------------
+# FILE UPLOAD
+# ----------------------------
+uploaded_file = st.file_uploader("Upload ANY Excel file", type=["xlsx"])
 
 if uploaded_file is None:
-    st.info("👈 Upload an Excel file to begin.")
     st.stop()
 
-
-def normalize_columns(df):
-    df.columns = df.columns.astype(str).str.strip().str.lower()
-    return df
-
-
-def find_column(df, keywords):
-    for col in df.columns:
-        for kw in keywords:
-            if kw in col:
-                return col
-    return None
-
-# -----------------------------
-# LOAD DATA
-# -----------------------------
 df = pd.read_excel(uploaded_file)
 
-# Required columns (adjust names here if needed)
-df = pd.read_excel(uploaded_file)
-df = normalize_columns(df)
+st.success(f"Loaded {df.shape[0]} rows × {df.shape[1]} columns")
 
-REMARK_COL = find_column(df, ["remark", "remarks", "observation", "action"])
-CITY_COL = find_column(df, ["city", "location", "branch"])
-ENGINEER_COL = find_column(df, ["engineer", "technician", "executive"])
+# ======================================================
+# 1️⃣ SCHEMA INTELLIGENCE ENGINE
+# ======================================================
 
-# Fail-safe check
-if REMARK_COL is None:
-    st.error("❌ Remarks column not found in uploaded Excel.")
-    st.stop()
+SCHEMA = {}
 
-# Optional columns are allowed to be None
-df = df.dropna(subset=[REMARK_COL])
+def detect_column_role(col, series):
+    sample = series.dropna().astype(str).head(20)
 
-df["clean_remark"] = df[REMARK_COL].apply(clean_text)
-df["fix_type"] = df["clean_remark"].apply(detect_fix_type) 
-df["clean_remark"] = df[REMARK_COL].apply(clean_text)
-df["fix_type"] = df["clean_remark"].apply(detect_fix_type)
+    text_ratio = sample.str.len().mean()
+    numeric_ratio = pd.to_numeric(series, errors="coerce").notna().mean()
 
-# -----------------------------
-# BASIC ANALYTICS
-# -----------------------------
-st.subheader("📊 Fix Type Distribution")
-fix_counts = df["fix_type"].value_counts()
-st.bar_chart(fix_counts)
+    # Date detection
+    try:
+        pd.to_datetime(sample.head(5))
+        return "DATE_EVENT"
+    except:
+        pass
 
-# -----------------------------
-# TF-IDF (Experience Retrieval)
-# -----------------------------
-vectorizer = TfidfVectorizer(stop_words="english")
-tfidf_matrix = vectorizer.fit_transform(df["clean_remark"])
+    # ID detection
+    if series.astype(str).str.match(r"^[A-Za-z0-9\-_/]+$").mean() > 0.8:
+        return "ENTITY_ID"
 
-# -----------------------------
-# QUESTION INPUT
-# -----------------------------
-st.subheader("🔍 Ask a Question (Based on Past Engineer Experience)")
-query = st.text_input("Ask a site / fault / solution related question")
+    # Location detection
+    if series.astype(str).str.len().mean() < 20:
+        return "ENTITY_LOCATION"
 
-if query:
-    intent = detect_intent(query)
+    # Numeric signal
+    if numeric_ratio > 0.7:
+        return "NUMERIC_SIGNAL"
 
-    # ======================================================
-    # ANALYTICS MODE
-    # ======================================================
-    if intent == "ANALYTICS":
-        st.subheader("📈 Analytical Answer")
+    # Long text
+    if text_ratio > 30:
+        return "TEXT_EXPLANATION"
 
-        q = query.lower()
-        location = extract_location(query, df[CITY_COL].dropna().unique())
-        asset = extract_asset(query)
+    return "UNKNOWN"
 
-        df_filtered = df.copy()
+for col in df.columns:
+    SCHEMA[col] = detect_column_role(col, df[col])
 
-        if location:
-            df_filtered = df_filtered[
-                df_filtered[CITY_COL].str.contains(location, case=False, na=False)
-            ]
+# Show detected schema
+st.subheader("🧬 Detected Schema Roles")
+schema_df = pd.DataFrame({
+    "Column": SCHEMA.keys(),
+    "Detected Role": SCHEMA.values()
+})
+st.dataframe(schema_df, use_container_width=True)
 
-        # OFFLINE VISIT LOGIC
-        if "offline" in q or "down" in q:
-            offline_mask = df_filtered["clean_remark"].apply(
-                lambda x: any(k in x for k in OFFLINE_KEYWORDS)
-            )
-            count = offline_mask.sum()
+# ======================================================
+# 2️⃣ INSIGHT ENGINES
+# ======================================================
 
-            st.metric(
-                label="Total Offline Engineer Visits",
-                value=int(count)
-            )
+INSIGHTS = []
 
-            st.caption(
-                "Counted visits where remarks indicate offline / down / connectivity issues."
-            )
+# ----------------------------
+# Data Quality Engine
+# ----------------------------
+text_cols = [c for c, r in SCHEMA.items() if r == "TEXT_EXPLANATION"]
 
-        # ASSET FAULT LOGIC
-        elif asset:
-            asset_words = ASSET_MAP[asset]
-            asset_mask = df_filtered["clean_remark"].apply(
-                lambda x: any(w in x for w in asset_words)
-            )
-            count = asset_mask.sum()
+if text_cols:
+    vague_phrases = ["ok", "working", "no issue", "fine", "checked"]
+    vague_count = 0
 
-            st.metric(
-                label=f"Total {asset.capitalize()} Related Visits",
-                value=int(count)
-            )
+    for col in text_cols:
+        vague_count += df[col].astype(str).str.lower().apply(
+            lambda x: any(v in x for v in vague_phrases)
+        ).sum()
 
-            st.caption(
-                f"Counted visits mentioning {asset}-related issues."
-            )
+    INSIGHTS.append({
+        "title": "🟠 Data Quality Risk",
+        "message": f"{vague_count} rows contain vague or low-information text."
+    })
 
-        else:
-            st.warning("⚠️ This analytics question is not yet mapped.")
+# ----------------------------
+# Process Efficiency Engine
+# ----------------------------
+date_cols = [c for c, r in SCHEMA.items() if r == "DATE_EVENT"]
 
-    # ======================================================
-    # EXPERIENCE MODE (RAG)
-    # ======================================================
-    else:
-        st.subheader("✅ Relevant Past Solutions")
+if len(date_cols) >= 2:
+    df_dates = df[date_cols].apply(pd.to_datetime, errors="coerce")
+    delta = (df_dates.max(axis=1) - df_dates.min(axis=1)).dt.days
 
-        query_vec = vectorizer.transform([clean_text(query)])
-        similarity = cosine_similarity(query_vec, tfidf_matrix)[0]
+    delayed = (delta > delta.median()).sum()
 
-        top_indices = similarity.argsort()[-5:][::-1]
+    INSIGHTS.append({
+        "title": "⏱ Process Delay Detected",
+        "message": f"{delayed} records took longer than typical completion time."
+    })
 
-        for idx in top_indices:
-            row = df.iloc[idx]
+# ----------------------------
+# Waste Detection Engine
+# ----------------------------
+if text_cols and date_cols:
+    waste = df[text_cols].isna().any(axis=1).sum()
 
-            with st.expander(
-                f"{row.get('System', 'System')} | {row.get(CITY_COL, 'City')} | Fix: {row['fix_type']}"
-            ):
-                st.write(f"**Engineer:** {row.get(ENGINEER_COL, 'N/A')}")
-                st.write("**Original Remark:**")
-                st.write(row[REMARK_COL]) 
+    INSIGHTS.append({
+        "title": "💸 Potential Waste",
+        "message": f"{waste} activities lack proper explanation or closure."
+    })
 
+# ----------------------------
+# Risk Engine
+# ----------------------------
+id_cols = [c for c, r in SCHEMA.items() if r == "ENTITY_ID"]
+
+if id_cols:
+    repeated = df[id_cols[0]].duplicated().sum()
+
+    INSIGHTS.append({
+        "title": "⚠️ Repeat Risk",
+        "message": f"{repeated} repeated IDs detected (possible recurring issues)."
+    })
+
+# ======================================================
+# 3️⃣ INSIGHT DASHBOARD
+# ======================================================
+
+st.subheader("📌 Auto-Generated Insights")
+
+if not INSIGHTS:
+    st.info("No high-confidence insights detected.")
+else:
+    for i in INSIGHTS:
+        st.warning(f"**{i['title']}**\n\n{i['message']}")
+
+# ======================================================
+# 4️⃣ DRILL-DOWN QUESTIONS (OPTIONAL)
+# ======================================================
+
+st.subheader("🔎 Drill-Down (Optional)")
+q = st.text_input("Ask WHY / WHERE / WHICH (not discovery)")
+
+if q:
+    st.info("This version supports insight-first analysis. Question answering is a Phase-2 add-on.") 
