@@ -56,6 +56,17 @@ def detect_fix_type(text):
         return "Temporary"
     return "Unclear"
 
+def detect_intent(query):
+    q = query.lower()
+    analytics_keywords = [
+        "how many", "total", "count", "number",
+        "offline", "visit", "visits"
+    ]
+    for k in analytics_keywords:
+        if k in q:
+            return "ANALYTICS"
+    return "EXPERIENCE"
+
 # -----------------------------
 # Sidebar
 # -----------------------------
@@ -177,20 +188,49 @@ st.subheader("🔍 Ask a Question (Based on Past Engineer Experience)")
 query = st.text_input("Ask a site / fault / solution related question")
 
 if query:
-    q_vec = vectorizer.transform([clean_text(query)])
-    scores = cosine_similarity(q_vec, X).flatten()
-    top_idx = scores.argsort()[-5:][::-1]
+    intent = detect_intent(query)
 
-    st.markdown("### ✅ Relevant Past Solutions")
+    # ---------------------------
+    # ANALYTICS MODE
+    # ---------------------------
+    if intent == "ANALYTICS":
+        st.subheader("📊 Analytical Answer")
 
-    for i in top_idx:
-        row = df.iloc[i]
-        with st.expander(
-            f"{row[col_system]} | {row[col_city]} | Fix: {row['fix_type']}"
-        ):
-            st.write("**Engineer:**", row[col_engineer])
-            st.write("**Original Remark:**")
-            st.write(row[col_remarks]) 
+        q = query.lower()
+
+        if "offline" in q:
+            count = df[df["clean_remarks"].str.contains("offline", na=False)].shape[0]
+            st.metric("Total Offline Engineer Visits", count)
+
+            st.write("Explanation:")
+            st.write("Counted visits where engineer remarks mention 'offline'.")
+
+        elif "cctv" in q:
+            count = df[df[col_system].str.contains("cctv", case=False, na=False)].shape[0]
+            st.metric("Total CCTV Engineer Visits", count)
+
+        else:
+            st.warning("This analytics question is not yet mapped.")
+
+    # ---------------------------
+    # EXPERIENCE MODE (RAG)
+    # ---------------------------
+    else:
+        q_vec = vectorizer.transform([clean_text(query)])
+        scores = cosine_similarity(q_vec, X).flatten()
+        top_idx = scores.argsort()[-5:][::-1]
+
+        st.markdown("### ✅ Relevant Past Solutions")
+
+        for i in top_idx:
+            row = df.iloc[i]
+            with st.expander(
+                f"{row[col_system]} | {row[col_city]} | Fix: {row['fix_type']}"
+            ):
+                st.write("**Engineer:**", row[col_engineer])
+                st.write("**Original Remark:**")
+                st.write(row[col_remarks])  
+
 
 
 
