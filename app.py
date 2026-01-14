@@ -4,6 +4,29 @@ import numpy as np
 import re
 from datetime import datetime
 
+def generate_insight_report(schema_df, insights, df):
+    report = []
+
+    report.append({
+        "Section": "Dataset Overview",
+        "Detail": f"Rows: {df.shape[0]}, Columns: {df.shape[1]}"
+    })
+
+    for _, row in schema_df.iterrows():
+        report.append({
+            "Section": "Detected Schema",
+            "Detail": f"{row['Column']} → {row['Detected Role']}"
+        })
+
+    for ins in insights:
+        report.append({
+            "Section": ins["title"],
+            "Detail": ins["message"]
+        })
+
+    return pd.DataFrame(report)
+
+
 # ----------------------------
 # PAGE CONFIG
 # ----------------------------
@@ -70,6 +93,33 @@ schema_df = pd.DataFrame({
     "Detected Role": SCHEMA.values()
 })
 st.dataframe(schema_df, use_container_width=True)
+
+st.subheader("🧭 Schema Mapping Suggestions")
+
+SUGGESTIONS = []
+
+for col, role in SCHEMA.items():
+    sample_values = df[col].dropna().astype(str).head(3).tolist()
+
+    if role == "UNKNOWN":
+        SUGGESTIONS.append({
+            "Column": col,
+            "Suggested Use": "Review manually",
+            "Sample Data": " | ".join(sample_values)
+        })
+
+    if role == "TEXT_EXPLANATION" and len(sample_values) < 3:
+        SUGGESTIONS.append({
+            "Column": col,
+            "Suggested Use": "Weak text signal (may cause poor insights)",
+            "Sample Data": " | ".join(sample_values)
+        })
+
+if SUGGESTIONS:
+    st.warning("⚠️ Some columns need human confirmation")
+    st.dataframe(pd.DataFrame(SUGGESTIONS), use_container_width=True)
+else:
+    st.success("✅ Schema confidence is high") 
 
 # ======================================================
 # 2️⃣ INSIGHT ENGINES
@@ -148,6 +198,29 @@ else:
     for i in INSIGHTS:
         st.warning(f"**{i['title']}**\n\n{i['message']}")
 
+st.subheader("📤 Export Insights")
+
+report_df = generate_insight_report(schema_df, INSIGHTS, df)
+
+col1, col2 = st.columns(2)
+
+with col1:
+    st.download_button(
+        label="⬇️ Download Insight Report (Excel)",
+        data=report_df.to_excel(index=False, engine="openpyxl"),
+        file_name="insight_report.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+
+with col2:
+    st.download_button(
+        label="⬇️ Download Insight Report (CSV)",
+        data=report_df.to_csv(index=False),
+        file_name="insight_report.csv",
+        mime="text/csv"
+    ) 
+
+
 # ======================================================
 # 4️⃣ DRILL-DOWN QUESTIONS (OPTIONAL)
 # ======================================================
@@ -157,3 +230,4 @@ q = st.text_input("Ask WHY / WHERE / WHICH (not discovery)")
 
 if q:
     st.info("This version supports insight-first analysis. Question answering is a Phase-2 add-on.") 
+
