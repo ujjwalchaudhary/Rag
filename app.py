@@ -20,9 +20,8 @@ from sklearn.metrics.pairwise import cosine_similarity
 
 #-------------------------------
 
-st.set_page_config( page_title="Engineer Visit Knowledge Dashboard (RAG)", layout="wide", )
-
-st.title("🛠️ Engineer Visit Knowledge Dashboard (RAG)") st.caption("Phase 2 – Analytics + Intelligence | TF-IDF (Stable, Cloud-safe)")
+st.title("🛠️ Engineer Visit Knowledge Dashboard (RAG)")
+st.caption("Phase 2 – Analytics + Intelligence | TF-IDF (Stable, Cloud-safe)")
 
 #-------------------------------
 
@@ -162,6 +161,7 @@ for i in top_idx:
 #END
 
 #=============================== 
+
 
 
 
