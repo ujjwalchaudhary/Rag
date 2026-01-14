@@ -1,138 +1,158 @@
-import streamlit as st
-import pandas as pd
-import re
+Engineer Visit RAG – Phase 2
 
-from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.metrics.pairwise import cosine_similarity
+Analytics + Intelligence (TF-IDF based, Stable)
 
-st.set_page_config(
-    page_title="Engineer Visit RAG Dashboard (Stable)",
-    layout="wide"
-)
+Mobile + Streamlit Cloud Ready
 
-USELESS_PHRASES = [
-    "all system working fine",
-    "system working fine",
-    "working fine",
-    "ok",
-    "done",
-    "visited site",
-    "checked",
-    "resolved",
-    "today i visited"
-]
+===============================
 
-def clean_remarks(text):
-    if not isinstance(text, str):
-        return ""
-    text = text.lower()
-    for phrase in USELESS_PHRASES:
-        text = text.replace(phrase, "")
-    text = re.sub(r"\s+", " ", text).strip()
-    return text
+import streamlit as st import pandas as pd import numpy as np import re from sklearn.feature_extraction.text import TfidfVectorizer from sklearn.metrics.pairwise import cosine_similarity
 
-def split_remark(text):
-    symptom = ""
-    cause = ""
-    solution = ""
+-------------------------------
 
-    if "but" in text:
-        parts = text.split("but", 1)
-        symptom = parts[0].strip()
-        cause = parts[1].strip()
-    else:
-        cause = text
+Page Config
 
-    if any(w in text for w in ["restart", "reset", "replaced", "changed", "new"]):
-        solution = text
+-------------------------------
 
-    return symptom, cause, solution
+st.set_page_config( page_title="Engineer Visit Knowledge Dashboard (RAG)", layout="wide", )
 
-def detect_fix_type(text):
-    if any(w in text for w in ["replaced", "changed", "new unit", "new"]):
-        return "Permanent Fix"
-    if any(w in text for w in ["restart", "reset", "temporary"]):
-        return "Temporary Fix"
-    return "Unclear"
+st.title("🛠️ Engineer Visit Knowledge Dashboard (RAG)") st.caption("Phase 2 – Analytics + Intelligence | TF-IDF (Stable, Cloud-safe)")
 
-st.sidebar.title("⚙️ Upload & Filters")
+-------------------------------
 
-uploaded_file = st.sidebar.file_uploader(
-    "Upload Engineer Visit Excel",
-    type=["xlsx"]
-)
+Helper Functions
 
-system_filter = st.sidebar.text_input("Filter by System (optional)")
-city_filter = st.sidebar.text_input("Filter by City (optional)")
+-------------------------------
 
-st.title("🧠 Engineer Visit Knowledge Dashboard (RAG)")
-st.caption("Stable TF-IDF based retrieval (Windows safe)")
+USELESS_PHRASES = [ "visited site", "checked system", "ok", "working fine", "all ok", ]
 
-if uploaded_file is None:
-    st.info("⬅️ Upload an Excel file to start")
-    st.stop()
+def clean_text(text): if not isinstance(text, str): return "" text = text.lower() for p in USELESS_PHRASES: text = text.replace(p, "") text = re.sub(r"\s+", " ", text).strip() return text
 
-df = pd.read_excel(uploaded_file)
+def detect_fix_type(text): t = text.lower() if any(w in t for w in ["replace", "replaced", "changed", "new", "faulty"]): return "Permanent" if any(w in t for w in ["restart", "reset", "temporary", "reboot"]): return "Temporary" return "Unclear"
 
-if "ENGINEER REMARKS" not in df.columns:
-    st.error("❌ Column 'ENGINEER REMARKS' not found in Excel")
-    st.stop()
+-------------------------------
 
-texts = []
-metadata = []
+Sidebar – Upload & Filters
 
-for _, row in df.iterrows():
-    raw = row.get("ENGINEER REMARKS", "")
-    cleaned = clean_remarks(raw)
-    if cleaned == "":
-        continue
+-------------------------------
 
-    symptom, cause, solution = split_remark(cleaned)
-    fix_type = detect_fix_type(cleaned)
+with st.sidebar: st.header("⚙️ Upload & Filters") uploaded_file = st.file_uploader("Upload Engineer Visit Excel", type=["xlsx"])
 
-    doc = f"""
-    Site symptom: {symptom}
-    Identified cause: {cause}
-    Solution applied: {solution}
-    Fix type: {fix_type}
-    """
+filter_system = st.text_input("Filter by System (optional)")
+filter_city = st.text_input("Filter by City (optional)")
 
-    texts.append(doc)
+-------------------------------
 
-    metadata.append({
-        "PMS ID": row.get("PMS ID"),
-        "System": row.get("System"),
-        "Engineer": row.get("Engineer"),
-        "City": row.get("City"),
-        "Fix Type": fix_type
-    })
+Load Data
 
-vectorizer = TfidfVectorizer(stop_words="english", ngram_range=(1, 2))
-tfidf_matrix = vectorizer.fit_transform(texts)
+-------------------------------
 
-st.success(f"✅ Indexed {len(texts)} engineer experiences")
+if not uploaded_file: st.info("👈 Upload an Excel file to begin") st.stop()
 
-st.subheader("🔎 Ask a Question")
+try: df = pd.read_excel(uploaded_file) except Exception as e: st.error(f"Failed to read file: {e}") st.stop()
 
-query = st.text_input("Example: system online but cctv not working")
+-------------------------------
 
-if query:
-    query_vec = vectorizer.transform([query])
-    scores = cosine_similarity(query_vec, tfidf_matrix)[0]
-    top_indices = scores.argsort()[-5:][::-1]
+Column Normalization
 
-    st.subheader("📋 Relevant Past Solutions")
+-------------------------------
 
-    for i in top_indices:
-        meta = metadata[i]
+df.columns = [c.strip().lower() for c in df.columns]
 
-        if system_filter and system_filter.lower() not in str(meta.get("System", "")).lower():
-            continue
-        if city_filter and city_filter.lower() not in str(meta.get("City", "")).lower():
-            continue
+REQUIRED_COLS = { "engineer remarks": "remarks", "system": "system", "city": "city", "engineer": "engineer", }
 
-        with st.expander(
-            f"PMS: {meta.get('PMS ID')} | System: {meta.get('System')} | Fix: {meta.get('Fix Type')}"
-        ):
-            st.text(texts[i])
-            st.json(meta) 
+rename_map = {} for k, v in REQUIRED_COLS.items(): for col in df.columns: if k in col: rename_map[col] = v
+
+df = df.rename(columns=rename_map)
+
+if "remarks" not in df.columns: st.error("❌ 'Engineer Remarks' column not found") st.stop()
+
+Fill missing
+
+for col in ["system", "city", "engineer"]: if col not in df.columns: df[col] = "Unknown"
+
+-------------------------------
+
+Cleaning + Feature Engineering
+
+-------------------------------
+
+df["clean_remarks"] = df["remarks"].apply(clean_text) df["fix_type"] = df["remarks"].apply(detect_fix_type)
+
+Apply Filters
+
+if filter_system: df = df[df["system"].str.contains(filter_system, case=False, na=False)]
+
+if filter_city: df = df[df["city"].str.contains(filter_city, case=False, na=False)]
+
+-------------------------------
+
+Indexing (TF-IDF)
+
+-------------------------------
+
+vectorizer = TfidfVectorizer( stop_words="english", ngram_range=(1, 2), min_df=2 )
+
+X = vectorizer.fit_transform(df["clean_remarks"])
+
+st.success(f"✅ Indexed {len(df)} engineer visit experiences")
+
+===============================
+
+PHASE 2 – ANALYTICS
+
+===============================
+
+st.subheader("📊 Phase 2 – Operational Analytics")
+
+col1, col2, col3 = st.columns(3)
+
+with col1: st.metric("Total Visits", len(df))
+
+with col2: repeat_issues = df["clean_remarks"].value_counts().iloc[0] st.metric("Most Repeated Issue Count", repeat_issues)
+
+with col3: perm_pct = round((df["fix_type"] == "Permanent").mean() * 100, 1) st.metric("Permanent Fix %", f"{perm_pct}%")
+
+-------------------------------
+
+Charts
+
+-------------------------------
+
+st.subheader("📈 Insights")
+
+c1, c2 = st.columns(2)
+
+with c1: st.caption("Top Systems") st.bar_chart(df["system"].value_counts().head(10))
+
+with c2: st.caption("Fix Type Distribution") st.bar_chart(df["fix_type"].value_counts())
+
+===============================
+
+PHASE 2 – RAG QUESTIONING
+
+===============================
+
+st.subheader("🔍 Ask a Question (Based on Past Engineer Experience)")
+
+query = st.text_input("Ask a site / fault / solution related question")
+
+if query: q_clean = clean_text(query) q_vec = vectorizer.transform([q_clean])
+
+sims = cosine_similarity(q_vec, X).flatten()
+top_idx = sims.argsort()[-5:][::-1]
+
+st.markdown("### ✅ Relevant Past Solutions")
+
+for i in top_idx:
+    row = df.iloc[i]
+    with st.expander(f"{row['system']} | {row['city']} | Fix: {row['fix_type']}"):
+        st.write("**Engineer:**", row["engineer"])
+        st.write("**Original Remark:**")
+        st.write(row["remarks"])
+
+===============================
+
+END
+
+=============================== 
