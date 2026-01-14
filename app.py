@@ -1,19 +1,13 @@
 
-# =========================================
-# Engineer Visit RAG – Phase 2
-# Analytics + Intelligence (TF-IDF, Stable)
-# =========================================
-
 import streamlit as st
 import pandas as pd
-import numpy as np
 import re
 
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 
 # -----------------------------
-# Page config
+# PAGE CONFIG
 # -----------------------------
 st.set_page_config(
     page_title="Engineer Visit Knowledge Dashboard (RAG)",
@@ -21,22 +15,33 @@ st.set_page_config(
 )
 
 st.title("🛠️ Engineer Visit Knowledge Dashboard (RAG)")
-st.caption("Phase 2 – Analytics + Intelligence | TF-IDF (Stable, Cloud-safe)")
+st.caption("Phase 3 – Analytics + City + Asset Intelligence (Stable TF-IDF)")
 
 # -----------------------------
-# Helper configuration
+# CONSTANTS
 # -----------------------------
 USELESS_PHRASES = [
-    "visited site",
-    "checked system",
-    "working fine",
-    "all ok",
-    "ok",
-    "done"
+    "all system working fine",
+    "all systems working fine",
+    "checked ok",
+    "no issue found",
+    "site ok",
+    "working fine"
 ]
 
+OFFLINE_KEYWORDS = [
+    "offline", "down", "not working", "no connectivity",
+    "network down", "router down", "power issue"
+]
+
+ASSET_MAP = {
+    "router": ["router", "network", "lan", "wan"],
+    "camera": ["camera", "cam"],
+    "dvr": ["dvr", "nvr", "recorder"]
+}
+
 # -----------------------------
-# Helper functions
+# HELPER FUNCTIONS
 # -----------------------------
 def clean_text(text):
     if not isinstance(text, str):
@@ -56,19 +61,38 @@ def detect_fix_type(text):
         return "Temporary"
     return "Unclear"
 
+
 def detect_intent(query):
     q = query.lower()
-    analytics_keywords = [
+    analytics_words = [
         "how many", "total", "count", "number",
         "offline", "visit", "visits"
     ]
-    for k in analytics_keywords:
-        if k in q:
+    for w in analytics_words:
+        if w in q:
             return "ANALYTICS"
     return "EXPERIENCE"
 
+
+def extract_location(query, locations):
+    q = query.lower()
+    for loc in locations:
+        if loc.lower() in q:
+            return loc
+    return None
+
+
+def extract_asset(query):
+    q = query.lower()
+    for asset, words in ASSET_MAP.items():
+        for w in words:
+            if w in q:
+                return asset
+    return None
+
+
 # -----------------------------
-# Sidebar
+# SIDEBAR – FILE UPLOAD
 # -----------------------------
 st.sidebar.header("⚙️ Upload & Filters")
 
@@ -77,164 +101,117 @@ uploaded_file = st.sidebar.file_uploader(
     type=["xlsx"]
 )
 
-filter_system = st.sidebar.text_input("Filter by System (optional)")
-filter_city = st.sidebar.text_input("Filter by City (optional)")
-
-# -----------------------------
-# Load data
-# -----------------------------
 if uploaded_file is None:
-    st.info("👈 Upload an Excel file to begin")
+    st.info("👈 Upload an Excel file to begin.")
     st.stop()
 
+# -----------------------------
+# LOAD DATA
+# -----------------------------
 df = pd.read_excel(uploaded_file)
 
-# Normalize column names
-df.columns = [c.strip().lower() for c in df.columns]
+# Required columns (adjust names here if needed)
+REMARK_COL = "Remark"
+CITY_COL = "City"
+ENGINEER_COL = "Engineer Name"
 
-# Try to auto-detect columns
-def find_col(keyword):
-    for c in df.columns:
-        if keyword in c:
-            return c
-    return None
+df = df.dropna(subset=[REMARK_COL])
 
-col_remarks = find_col("remark")
-col_system = find_col("system")
-col_city = find_col("city")
-col_engineer = find_col("engineer")
-
-if col_remarks is None:
-    st.error("❌ Engineer Remarks column not found")
-    st.stop()
-
-# Fill missing columns
-if col_system is None:
-    df["system"] = "Unknown"
-    col_system = "system"
-
-if col_city is None:
-    df["city"] = "Unknown"
-    col_city = "city"
-
-if col_engineer is None:
-    df["engineer"] = "Unknown"
-    col_engineer = "engineer"
+df["clean_remark"] = df[REMARK_COL].apply(clean_text)
+df["fix_type"] = df["clean_remark"].apply(detect_fix_type)
 
 # -----------------------------
-# Cleaning + features
+# BASIC ANALYTICS
 # -----------------------------
-df["clean_remarks"] = df[col_remarks].apply(clean_text)
-df["fix_type"] = df[col_remarks].apply(detect_fix_type)
-
-df = df[df["clean_remarks"] != ""]
-
-# Apply filters
-if filter_system:
-    df = df[df[col_system].str.contains(filter_system, case=False, na=False)]
-
-if filter_city:
-    df = df[df[col_city].str.contains(filter_city, case=False, na=False)]
+st.subheader("📊 Fix Type Distribution")
+fix_counts = df["fix_type"].value_counts()
+st.bar_chart(fix_counts)
 
 # -----------------------------
-# Vectorization (TF-IDF)
+# TF-IDF (Experience Retrieval)
 # -----------------------------
-vectorizer = TfidfVectorizer(
-    stop_words="english",
-    ngram_range=(1, 2),
-    min_df=2
-)
+vectorizer = TfidfVectorizer(stop_words="english")
+tfidf_matrix = vectorizer.fit_transform(df["clean_remark"])
 
-X = vectorizer.fit_transform(df["clean_remarks"])
-
-st.success(f"✅ Indexed {len(df)} engineer visit experiences")
-
-# =============================
-# PHASE 2 – ANALYTICS
-# =============================
-st.subheader("📊 Phase 2 – Operational Analytics")
-
-c1, c2, c3 = st.columns(3)
-
-with c1:
-    st.metric("Total Visits", len(df))
-
-with c2:
-    st.metric("Permanent Fix %",
-              round((df["fix_type"] == "Permanent").mean() * 100, 1))
-
-with c3:
-    st.metric("Temporary Fix %",
-              round((df["fix_type"] == "Temporary").mean() * 100, 1))
-
-# Charts
-st.subheader("📈 Key Insights")
-
-colA, colB = st.columns(2)
-
-with colA:
-    st.caption("Top Systems")
-    st.bar_chart(df[col_system].value_counts().head(10))
-
-with colB:
-    st.caption("Fix Type Distribution")
-    st.bar_chart(df["fix_type"].value_counts())
-
-# =============================
-# PHASE 2 – RAG SEARCH
-# =============================
+# -----------------------------
+# QUESTION INPUT
+# -----------------------------
 st.subheader("🔍 Ask a Question (Based on Past Engineer Experience)")
-
 query = st.text_input("Ask a site / fault / solution related question")
 
 if query:
     intent = detect_intent(query)
 
-    # ---------------------------
+    # ======================================================
     # ANALYTICS MODE
-    # ---------------------------
+    # ======================================================
     if intent == "ANALYTICS":
-        st.subheader("📊 Analytical Answer")
+        st.subheader("📈 Analytical Answer")
 
         q = query.lower()
+        location = extract_location(query, df[CITY_COL].dropna().unique())
+        asset = extract_asset(query)
 
-        if "offline" in q:
-            count = df[df["clean_remarks"].str.contains("offline", na=False)].shape[0]
-            st.metric("Total Offline Engineer Visits", count)
+        df_filtered = df.copy()
 
-            st.write("Explanation:")
-            st.write("Counted visits where engineer remarks mention 'offline'.")
+        if location:
+            df_filtered = df_filtered[
+                df_filtered[CITY_COL].str.contains(location, case=False, na=False)
+            ]
 
-        elif "cctv" in q:
-            count = df[df[col_system].str.contains("cctv", case=False, na=False)].shape[0]
-            st.metric("Total CCTV Engineer Visits", count)
+        # OFFLINE VISIT LOGIC
+        if "offline" in q or "down" in q:
+            offline_mask = df_filtered["clean_remark"].apply(
+                lambda x: any(k in x for k in OFFLINE_KEYWORDS)
+            )
+            count = offline_mask.sum()
+
+            st.metric(
+                label="Total Offline Engineer Visits",
+                value=int(count)
+            )
+
+            st.caption(
+                "Counted visits where remarks indicate offline / down / connectivity issues."
+            )
+
+        # ASSET FAULT LOGIC
+        elif asset:
+            asset_words = ASSET_MAP[asset]
+            asset_mask = df_filtered["clean_remark"].apply(
+                lambda x: any(w in x for w in asset_words)
+            )
+            count = asset_mask.sum()
+
+            st.metric(
+                label=f"Total {asset.capitalize()} Related Visits",
+                value=int(count)
+            )
+
+            st.caption(
+                f"Counted visits mentioning {asset}-related issues."
+            )
 
         else:
-            st.warning("This analytics question is not yet mapped.")
+            st.warning("⚠️ This analytics question is not yet mapped.")
 
-    # ---------------------------
+    # ======================================================
     # EXPERIENCE MODE (RAG)
-    # ---------------------------
+    # ======================================================
     else:
-        q_vec = vectorizer.transform([clean_text(query)])
-        scores = cosine_similarity(q_vec, X).flatten()
-        top_idx = scores.argsort()[-5:][::-1]
+        st.subheader("✅ Relevant Past Solutions")
 
-        st.markdown("### ✅ Relevant Past Solutions")
+        query_vec = vectorizer.transform([clean_text(query)])
+        similarity = cosine_similarity(query_vec, tfidf_matrix)[0]
 
-        for i in top_idx:
-            row = df.iloc[i]
+        top_indices = similarity.argsort()[-5:][::-1]
+
+        for idx in top_indices:
+            row = df.iloc[idx]
+
             with st.expander(
-                f"{row[col_system]} | {row[col_city]} | Fix: {row['fix_type']}"
+                f"{row.get('System', 'System')} | {row.get(CITY_COL, 'City')} | Fix: {row['fix_type']}"
             ):
-                st.write("**Engineer:**", row[col_engineer])
+                st.write(f"**Engineer:** {row.get(ENGINEER_COL, 'N/A')}")
                 st.write("**Original Remark:**")
-                st.write(row[col_remarks])  
-
-
-
-
-
-
-
-
+                st.write(row[REMARK_COL]) 
