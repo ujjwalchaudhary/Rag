@@ -105,18 +105,42 @@ if uploaded_file is None:
     st.info("👈 Upload an Excel file to begin.")
     st.stop()
 
+
+def normalize_columns(df):
+    df.columns = df.columns.astype(str).str.strip().str.lower()
+    return df
+
+
+def find_column(df, keywords):
+    for col in df.columns:
+        for kw in keywords:
+            if kw in col:
+                return col
+    return None
+
 # -----------------------------
 # LOAD DATA
 # -----------------------------
 df = pd.read_excel(uploaded_file)
 
 # Required columns (adjust names here if needed)
-REMARK_COL = "Remark"
-CITY_COL = "City"
-ENGINEER_COL = "Engineer Name"
+df = pd.read_excel(uploaded_file)
+df = normalize_columns(df)
 
+REMARK_COL = find_column(df, ["remark", "remarks", "observation", "action"])
+CITY_COL = find_column(df, ["city", "location", "branch"])
+ENGINEER_COL = find_column(df, ["engineer", "technician", "executive"])
+
+# Fail-safe check
+if REMARK_COL is None:
+    st.error("❌ Remarks column not found in uploaded Excel.")
+    st.stop()
+
+# Optional columns are allowed to be None
 df = df.dropna(subset=[REMARK_COL])
 
+df["clean_remark"] = df[REMARK_COL].apply(clean_text)
+df["fix_type"] = df["clean_remark"].apply(detect_fix_type) 
 df["clean_remark"] = df[REMARK_COL].apply(clean_text)
 df["fix_type"] = df["clean_remark"].apply(detect_fix_type)
 
@@ -215,3 +239,4 @@ if query:
                 st.write(f"**Engineer:** {row.get(ENGINEER_COL, 'N/A')}")
                 st.write("**Original Remark:**")
                 st.write(row[REMARK_COL]) 
+
