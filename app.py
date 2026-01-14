@@ -214,7 +214,8 @@ st.download_button(
     label="⬇️ Download Insight Report (Excel)",
     data=excel_buffer,
     file_name="insight_report.xlsx",
-    mi
+    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+) 
 
 with col2:
     st.download_button(
@@ -234,5 +235,6 @@ q = st.text_input("Ask WHY / WHERE / WHICH (not discovery)")
 
 if q:
     st.info("This version supports insight-first analysis. Question answering is a Phase-2 add-on.") 
+
 
 
