@@ -1,28 +1,28 @@
-Engineer Visit RAG – Phase 2
+#Engineer Visit RAG – Phase 2
 
-Analytics + Intelligence (TF-IDF based, Stable)
+#Analytics + Intelligence (TF-IDF based, Stable)
 
-Mobile + Streamlit Cloud Ready
+#Mobile + Streamlit Cloud Ready
 
-===============================
+#===============================
 
 import streamlit as st import pandas as pd import numpy as np import re from sklearn.feature_extraction.text import TfidfVectorizer from sklearn.metrics.pairwise import cosine_similarity
 
--------------------------------
+#-------------------------------
 
-Page Config
+#Page Config
 
--------------------------------
+#-------------------------------
 
 st.set_page_config( page_title="Engineer Visit Knowledge Dashboard (RAG)", layout="wide", )
 
 st.title("🛠️ Engineer Visit Knowledge Dashboard (RAG)") st.caption("Phase 2 – Analytics + Intelligence | TF-IDF (Stable, Cloud-safe)")
 
--------------------------------
+#-------------------------------
 
-Helper Functions
+#Helper Functions
 
--------------------------------
+#-------------------------------
 
 USELESS_PHRASES = [ "visited site", "checked system", "ok", "working fine", "all ok", ]
 
@@ -30,32 +30,32 @@ def clean_text(text): if not isinstance(text, str): return "" text = text.lower(
 
 def detect_fix_type(text): t = text.lower() if any(w in t for w in ["replace", "replaced", "changed", "new", "faulty"]): return "Permanent" if any(w in t for w in ["restart", "reset", "temporary", "reboot"]): return "Temporary" return "Unclear"
 
--------------------------------
+#-------------------------------
 
-Sidebar – Upload & Filters
+#Sidebar – Upload & Filters
 
--------------------------------
+#-------------------------------
 
 with st.sidebar: st.header("⚙️ Upload & Filters") uploaded_file = st.file_uploader("Upload Engineer Visit Excel", type=["xlsx"])
 
 filter_system = st.text_input("Filter by System (optional)")
 filter_city = st.text_input("Filter by City (optional)")
 
--------------------------------
+#-------------------------------
 
-Load Data
+#Load Data
 
--------------------------------
+#-------------------------------
 
 if not uploaded_file: st.info("👈 Upload an Excel file to begin") st.stop()
 
 try: df = pd.read_excel(uploaded_file) except Exception as e: st.error(f"Failed to read file: {e}") st.stop()
 
--------------------------------
+#-------------------------------
 
-Column Normalization
+#Column Normalization
 
--------------------------------
+#-------------------------------
 
 df.columns = [c.strip().lower() for c in df.columns]
 
@@ -71,11 +71,11 @@ Fill missing
 
 for col in ["system", "city", "engineer"]: if col not in df.columns: df[col] = "Unknown"
 
--------------------------------
+#-------------------------------
 
-Cleaning + Feature Engineering
+#Cleaning + Feature Engineering
 
--------------------------------
+#-------------------------------
 
 df["clean_remarks"] = df["remarks"].apply(clean_text) df["fix_type"] = df["remarks"].apply(detect_fix_type)
 
@@ -85,11 +85,11 @@ if filter_system: df = df[df["system"].str.contains(filter_system, case=False, n
 
 if filter_city: df = df[df["city"].str.contains(filter_city, case=False, na=False)]
 
--------------------------------
+#-------------------------------
 
-Indexing (TF-IDF)
+#Indexing (TF-IDF)
 
--------------------------------
+#-------------------------------
 
 vectorizer = TfidfVectorizer( stop_words="english", ngram_range=(1, 2), min_df=2 )
 
@@ -97,11 +97,11 @@ X = vectorizer.fit_transform(df["clean_remarks"])
 
 st.success(f"✅ Indexed {len(df)} engineer visit experiences")
 
-===============================
+#===============================
 
-PHASE 2 – ANALYTICS
+#PHASE 2 – ANALYTICS
 
-===============================
+#===============================
 
 st.subheader("📊 Phase 2 – Operational Analytics")
 
@@ -113,11 +113,11 @@ with col2: repeat_issues = df["clean_remarks"].value_counts().iloc[0] st.metric(
 
 with col3: perm_pct = round((df["fix_type"] == "Permanent").mean() * 100, 1) st.metric("Permanent Fix %", f"{perm_pct}%")
 
--------------------------------
+#-------------------------------
 
-Charts
+#Charts
 
--------------------------------
+#-------------------------------
 
 st.subheader("📈 Insights")
 
@@ -127,11 +127,11 @@ with c1: st.caption("Top Systems") st.bar_chart(df["system"].value_counts().head
 
 with c2: st.caption("Fix Type Distribution") st.bar_chart(df["fix_type"].value_counts())
 
-===============================
+#===============================
 
-PHASE 2 – RAG QUESTIONING
+#PHASE 2 – RAG QUESTIONING
 
-===============================
+#===============================
 
 st.subheader("🔍 Ask a Question (Based on Past Engineer Experience)")
 
@@ -151,8 +151,9 @@ for i in top_idx:
         st.write("**Original Remark:**")
         st.write(row["remarks"])
 
-===============================
+#===============================
 
-END
+#END
 
-=============================== 
+#=============================== 
+
