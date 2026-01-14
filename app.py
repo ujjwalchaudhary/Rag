@@ -3,6 +3,7 @@ import pandas as pd
 import numpy as np
 import re
 from datetime import datetime
+from io import BytesIO
 
 def generate_insight_report(schema_df, insights, df):
     report = []
@@ -205,12 +206,15 @@ report_df = generate_insight_report(schema_df, INSIGHTS, df)
 col1, col2 = st.columns(2)
 
 with col1:
-    st.download_button(
-        label="⬇️ Download Insight Report (Excel)",
-        data=report_df.to_excel(index=False, engine="openpyxl"),
-        file_name="insight_report.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    )
+   excel_buffer = BytesIO()
+report_df.to_excel(excel_buffer, index=False, engine="openpyxl")
+excel_buffer.seek(0)
+
+st.download_button(
+    label="⬇️ Download Insight Report (Excel)",
+    data=excel_buffer,
+    file_name="insight_report.xlsx",
+    mi
 
 with col2:
     st.download_button(
@@ -230,4 +234,5 @@ q = st.text_input("Ask WHY / WHERE / WHICH (not discovery)")
 
 if q:
     st.info("This version supports insight-first analysis. Question answering is a Phase-2 add-on.") 
+
 
