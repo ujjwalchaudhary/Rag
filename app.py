@@ -2,239 +2,210 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import re
-from datetime import datetime
-from io import BytesIO
 
-def generate_insight_report(schema_df, insights, df):
-    report = []
-
-    report.append({
-        "Section": "Dataset Overview",
-        "Detail": f"Rows: {df.shape[0]}, Columns: {df.shape[1]}"
-    })
-
-    for _, row in schema_df.iterrows():
-        report.append({
-            "Section": "Detected Schema",
-            "Detail": f"{row['Column']} → {row['Detected Role']}"
-        })
-
-    for ins in insights:
-        report.append({
-            "Section": ins["title"],
-            "Detail": ins["message"]
-        })
-
-    return pd.DataFrame(report)
-
-
-# ----------------------------
+# -----------------------------
 # PAGE CONFIG
-# ----------------------------
-st.set_page_config(page_title="Excel Intelligence Engine", layout="wide")
-st.title("🧠 Excel Intelligence Engine")
-st.caption("Schema-Agnostic | Insight-First | Enterprise Safe")
+# -----------------------------
+st.set_page_config(
+    page_title="Universal Excel Insight Engine",
+    layout="wide"
+)
 
-# ----------------------------
+st.title("🧠 Universal Excel Insight Engine")
+st.caption("Schema-Aware | Evidence-Based | No Hallucination")
+
+# -----------------------------
 # FILE UPLOAD
-# ----------------------------
-uploaded_file = st.file_uploader("Upload ANY Excel file", type=["xlsx"])
+# -----------------------------
+uploaded_file = st.file_uploader(
+    "Upload ANY Excel file",
+    type=["xlsx"]
+)
 
 if uploaded_file is None:
     st.stop()
 
 df = pd.read_excel(uploaded_file)
+original_df = df.copy()
 
-st.success(f"Loaded {df.shape[0]} rows × {df.shape[1]} columns")
+st.success(f"Loaded {len(df)} rows and {len(df.columns)} columns")
 
-# ======================================================
-# 1️⃣ SCHEMA INTELLIGENCE ENGINE
-# ======================================================
+# -----------------------------
+# SCHEMA DETECTION
+# -----------------------------
+def normalize(col):
+    return re.sub(r"[^a-z0-9]", "", col.lower())
 
-SCHEMA = {}
+normalized_cols = {normalize(c): c for c in df.columns}
 
-def detect_column_role(col, series):
-    sample = series.dropna().astype(str).head(20)
+def find_column(keywords):
+    for k, original in normalized_cols.items():
+        for word in keywords:
+            if word in k:
+                return original
+    return None
 
-    text_ratio = sample.str.len().mean()
-    numeric_ratio = pd.to_numeric(series, errors="coerce").notna().mean()
+SCHEMA = {
+    "id": find_column(["complaint", "id", "ticket", "reference"]),
+    "text": find_column(["remark", "comment", "description", "body", "fault"]),
+    "status": find_column(["status", "close"]),
+    "tat": find_column(["tat"]),
+    "date": find_column(["date", "created", "logged"]),
+    "city": find_column(["city"]),
+    "state": find_column(["state"]),
+}
 
-    # Date detection
-    try:
-        pd.to_datetime(sample.head(5))
-        return "DATE_EVENT"
-    except:
-        pass
+with st.expander("🔍 Detected Schema"):
+    st.json(SCHEMA)
 
-    # ID detection
-    if series.astype(str).str.match(r"^[A-Za-z0-9\-_/]+$").mean() > 0.8:
-        return "ENTITY_ID"
-
-    # Location detection
-    if series.astype(str).str.len().mean() < 20:
-        return "ENTITY_LOCATION"
-
-    # Numeric signal
-    if numeric_ratio > 0.7:
-        return "NUMERIC_SIGNAL"
-
-    # Long text
-    if text_ratio > 30:
-        return "TEXT_EXPLANATION"
-
-    return "UNKNOWN"
-
-for col in df.columns:
-    SCHEMA[col] = detect_column_role(col, df[col])
-
-# Show detected schema
-st.subheader("🧬 Detected Schema Roles")
-schema_df = pd.DataFrame({
-    "Column": SCHEMA.keys(),
-    "Detected Role": SCHEMA.values()
-})
-st.dataframe(schema_df, use_container_width=True)
-
-st.subheader("🧭 Schema Mapping Suggestions")
-
-SUGGESTIONS = []
-
-for col, role in SCHEMA.items():
-    sample_values = df[col].dropna().astype(str).head(3).tolist()
-
-    if role == "UNKNOWN":
-        SUGGESTIONS.append({
-            "Column": col,
-            "Suggested Use": "Review manually",
-            "Sample Data": " | ".join(sample_values)
-        })
-
-    if role == "TEXT_EXPLANATION" and len(sample_values) < 3:
-        SUGGESTIONS.append({
-            "Column": col,
-            "Suggested Use": "Weak text signal (may cause poor insights)",
-            "Sample Data": " | ".join(sample_values)
-        })
-
-if SUGGESTIONS:
-    st.warning("⚠️ Some columns need human confirmation")
-    st.dataframe(pd.DataFrame(SUGGESTIONS), use_container_width=True)
-else:
-    st.success("✅ Schema confidence is high") 
-
-# ======================================================
-# 2️⃣ INSIGHT ENGINES
-# ======================================================
-
+# -----------------------------
+# INSIGHT ENGINE STORAGE
+# -----------------------------
 INSIGHTS = []
 
-# ----------------------------
-# Data Quality Engine
-# ----------------------------
-text_cols = [c for c, r in SCHEMA.items() if r == "TEXT_EXPLANATION"]
-
-if text_cols:
-    vague_phrases = ["ok", "working", "no issue", "fine", "checked"]
-    vague_count = 0
-
-    for col in text_cols:
-        vague_count += df[col].astype(str).str.lower().apply(
-            lambda x: any(v in x for v in vague_phrases)
-        ).sum()
-
+def register_insight(
+    title,
+    category,
+    description,
+    rule,
+    rows,
+    columns
+):
     INSIGHTS.append({
-        "title": "🟠 Data Quality Risk",
-        "message": f"{vague_count} rows contain vague or low-information text."
+        "title": title,
+        "category": category,
+        "description": description,
+        "rule": rule,
+        "row_count": len(rows),
+        "rows": rows,
+        "columns": columns
     })
 
-# ----------------------------
-# Process Efficiency Engine
-# ----------------------------
-date_cols = [c for c, r in SCHEMA.items() if r == "DATE_EVENT"]
+# -----------------------------
+# INSIGHT ENGINE 1: DATA QUALITY
+# -----------------------------
+for col in df.columns:
+    missing_rows = df[df[col].isna()].index.tolist()
+    if len(missing_rows) > 0:
+        register_insight(
+            title=f"Missing values in '{col}'",
+            category="Data Quality Gap",
+            description=f"{len(missing_rows)} records have missing values in {col}",
+            rule="IS NULL",
+            rows=missing_rows,
+            columns=[col]
+        )
 
-if len(date_cols) >= 2:
-    df_dates = df[date_cols].apply(pd.to_datetime, errors="coerce")
-    delta = (df_dates.max(axis=1) - df_dates.min(axis=1)).dt.days
+# -----------------------------
+# INSIGHT ENGINE 2: WASTE (NO MEANINGFUL TEXT)
+# -----------------------------
+if SCHEMA["text"]:
+    useless_patterns = [
+        "ok", "fine", "working", "no issue", "checked"
+    ]
 
-    delayed = (delta > delta.median()).sum()
+    def low_info(text):
+        if not isinstance(text, str):
+            return True
+        t = text.lower()
+        return any(p in t for p in useless_patterns) and len(t) < 40
 
-    INSIGHTS.append({
-        "title": "⏱ Process Delay Detected",
-        "message": f"{delayed} records took longer than typical completion time."
-    })
+    waste_rows = df[df[SCHEMA["text"]].apply(low_info)].index.tolist()
 
-# ----------------------------
-# Waste Detection Engine
-# ----------------------------
-if text_cols and date_cols:
-    waste = df[text_cols].isna().any(axis=1).sum()
+    if waste_rows:
+        register_insight(
+            title="Low-information activity records",
+            category="Potential Waste",
+            description=f"{len(waste_rows)} records lack proper explanation",
+            rule="LOW_INFORMATION_TEXT",
+            rows=waste_rows,
+            columns=[SCHEMA["text"]]
+        )
 
-    INSIGHTS.append({
-        "title": "💸 Potential Waste",
-        "message": f"{waste} activities lack proper explanation or closure."
-    })
+# -----------------------------
+# INSIGHT ENGINE 3: TIME RISK (TAT)
+# -----------------------------
+if SCHEMA["tat"]:
+    tat_series = pd.to_numeric(df[SCHEMA["tat"]], errors="coerce")
+    median_tat = tat_series.median()
 
-# ----------------------------
-# Risk Engine
-# ----------------------------
-id_cols = [c for c, r in SCHEMA.items() if r == "ENTITY_ID"]
+    delayed_rows = tat_series[tat_series > median_tat].index.tolist()
 
-if id_cols:
-    repeated = df[id_cols[0]].duplicated().sum()
+    if delayed_rows:
+        register_insight(
+            title="Long resolution time risk",
+            category="Operational Risk",
+            description=f"{len(delayed_rows)} records exceed median TAT",
+            rule=f"TAT > {median_tat}",
+            rows=delayed_rows,
+            columns=[SCHEMA["tat"]]
+        )
 
-    INSIGHTS.append({
-        "title": "⚠️ Repeat Risk",
-        "message": f"{repeated} repeated IDs detected (possible recurring issues)."
-    })
+# -----------------------------
+# INSIGHT ENGINE 4: REPEAT ID RISK
+# -----------------------------
+if SCHEMA["id"]:
+    duplicates = df[df.duplicated(SCHEMA["id"], keep=False)]
+    if not duplicates.empty:
+        register_insight(
+            title="Repeated IDs detected",
+            category="Repeat Risk",
+            description=f"{duplicates[SCHEMA['id']].nunique()} IDs repeat",
+            rule="DUPLICATE_ID",
+            rows=duplicates.index.tolist(),
+            columns=[SCHEMA["id"]]
+        )
 
-# ======================================================
-# 3️⃣ INSIGHT DASHBOARD
-# ======================================================
-
-st.subheader("📌 Auto-Generated Insights")
+# -----------------------------
+# DISPLAY INSIGHTS
+# -----------------------------
+st.header("📌 Auto-Generated Insights")
 
 if not INSIGHTS:
-    st.info("No high-confidence insights detected.")
+    st.info("No major risks detected.")
 else:
-    for i in INSIGHTS:
-        st.warning(f"**{i['title']}**\n\n{i['message']}")
+    for i, ins in enumerate(INSIGHTS):
+        with st.expander(f"🔎 {ins['title']} ({ins['category']})"):
+            st.write(ins["description"])
+            st.markdown(f"**Rule:** `{ins['rule']}`")
+            st.markdown(f"**Rows affected:** {ins['row_count']}")
+            st.markdown(f"**Columns involved:** {', '.join(ins['columns'])}")
 
-st.subheader("📤 Export Insights")
+            # -----------------------------
+            # DRILL DOWN (REAL, SAFE)
+            # -----------------------------
+            drill = st.checkbox(
+                "Show affected records",
+                key=f"drill_{i}"
+            )
 
-report_df = generate_insight_report(schema_df, INSIGHTS, df)
+            if drill:
+                st.dataframe(
+                    original_df.loc[ins["rows"], ins["columns"] + (
+                        [SCHEMA["id"]] if SCHEMA["id"] else []
+                    )]
+                )
 
-col1, col2 = st.columns(2)
+# -----------------------------
+# EXPORT EVIDENCE
+# -----------------------------
+st.header("⬇️ Export Evidence")
 
-with col1:
-   excel_buffer = BytesIO()
-report_df.to_excel(excel_buffer, index=False, engine="openpyxl")
-excel_buffer.seek(0)
+if st.button("Download Insight Evidence"):
+    report_rows = []
+    for ins in INSIGHTS:
+        for r in ins["rows"]:
+            report_rows.append({
+                "Insight": ins["title"],
+                "Category": ins["category"],
+                "Rule": ins["rule"],
+                "Row Index": r
+            })
 
-st.download_button(
-    label="⬇️ Download Insight Report (Excel)",
-    data=excel_buffer,
-    file_name="insight_report.xlsx",
-    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-) 
+    report_df = pd.DataFrame(report_rows)
 
-with col2:
     st.download_button(
-        label="⬇️ Download Insight Report (CSV)",
-        data=report_df.to_csv(index=False),
-        file_name="insight_report.csv",
-        mime="text/csv"
+        "Download CSV",
+        report_df.to_csv(index=False),
+        file_name="insight_evidence.csv"
     ) 
-
-
-# ======================================================
-# 4️⃣ DRILL-DOWN QUESTIONS (OPTIONAL)
-# ======================================================
-
-st.subheader("🔎 Drill-Down (Optional)")
-q = st.text_input("Ask WHY / WHERE / WHICH (not discovery)")
-
-if q:
-    st.info("This version supports insight-first analysis. Question answering is a Phase-2 add-on.") 
-
-
-
