@@ -209,3 +209,94 @@ if st.button("Download Insight Evidence"):
         report_df.to_csv(index=False),
         file_name="insight_evidence.csv"
     ) 
+
+
+
+# =====================================================
+# PHASE-2: EXPERIENCE RETRIEVAL (EMAIL DATASET)
+# =====================================================
+
+st.header("🧵 Phase-2: Email Experience & Conversations")
+
+# -----------------------------
+# THREAD RECONSTRUCTION
+# -----------------------------
+if {"Message_ID", "In_Reply_To"}.issubset(df.columns):
+
+    df["THREAD_ID"] = df["Message_ID"]
+    reply_map = dict(zip(df["Message_ID"], df["In_Reply_To"]))
+
+    def find_root(msg_id):
+        while msg_id in reply_map and pd.notna(reply_map[msg_id]):
+            msg_id = reply_map[msg_id]
+        return msg_id
+
+    df["THREAD_ID"] = df["Message_ID"].apply(find_root)
+
+    thread_counts = df["THREAD_ID"].value_counts()
+
+    col1, col2 = st.columns(2)
+    col1.metric("Total Threads", thread_counts.shape[0])
+    col2.metric("Largest Thread Size", thread_counts.max())
+
+    # -----------------------------
+    # THREAD DRILL-DOWN
+    # -----------------------------
+    with st.expander("🔍 View Sample Conversation Thread"):
+        sample_thread = thread_counts.index[0]
+        thread_df = df[df["THREAD_ID"] == sample_thread]
+
+        st.write(f"Thread ID: {sample_thread}")
+        st.dataframe(
+            thread_df[
+                ["From_Email", "Subject", "Received_Time"]
+            ]
+        )
+
+else:
+    st.info("Thread reconstruction not available for this dataset.")
+
+# -----------------------------
+# TF-IDF EXPERIENCE INDEX
+# -----------------------------
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.metrics.pairwise import cosine_similarity
+
+if {"Subject", "Email_Body"}.issubset(df.columns):
+
+    st.header("🧠 Similar Past Emails (TF-IDF)")
+
+    df["TEXT_COMBINED"] = (
+        df["Subject"].fillna("") + " " + df["Email_Body"].fillna("")
+    )
+
+    vectorizer = TfidfVectorizer(
+        stop_words="english",
+        max_features=5000
+    )
+
+    tfidf_matrix = vectorizer.fit_transform(df["TEXT_COMBINED"])
+
+    query = st.text_input(
+        "Search similar past complaints / emails"
+    )
+
+    if query:
+        query_vec = vectorizer.transform([query])
+        similarity = cosine_similarity(query_vec, tfidf_matrix)[0]
+
+        top_idx = similarity.argsort()[-5:][::-1]
+
+        for idx in top_idx:
+            row = df.iloc[idx]
+
+            with st.expander(
+                f"Score: {round(similarity[idx], 2)} | {row['Subject']}"
+            ):
+                st.write("**From:**", row["From_Email"])
+                st.write("**Received:**", row["Received_Time"])
+                st.write("**Email Body:**")
+                st.write(row["Email_Body"])
+else:
+    st.info("TF-IDF experience search not available for this dataset.")
+
